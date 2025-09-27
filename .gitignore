@@ -1,3 +1,41 @@
+# Environment variables
 .env
 Git_PAT.txt
+
+# Database files (large datasets)
 database/
+*.csv
+*.db
+*.sqlite
+
+# User data and credentials
+user_tokens/
+google_credentials/
+
+# Python cache files
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# IDE files
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Large files that shouldn't be in git
+*.zip
+*.tar.gz
+*.rar
+*.7z

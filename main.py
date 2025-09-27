@@ -1,84 +1,121 @@
 # main.py
+import json
+import os
+
+from google_auth_oauthlib.flow import Flow
 from langgraph.graph import StateGraph, START, END
 from typing_extensions import TypedDict
 from typing import Literal
 from langgraph.types import Command
+
+from agents.feedback import feedback_agent
 from agents.itinerary import itinerary_agent
 from agents.data_retrieval import data_retrieval_agent
 from agents.calendar import calendar_agent
 from agents.query_checker import query_checker_module
 from config import llm  # Import the shared llm from config.py
+from pydantic import BaseModel
+from fastapi.responses import StreamingResponse,Response
+from typing import AsyncIterator
+from fastapi.responses import RedirectResponse
+from fastapi.responses import JSONResponse
 
+import logging
+from uuid import uuid4
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi import FastAPI,HTTPException,Body
+from fastapi import Request
+
+os.environ['OAUTHLIB_INSECURE_TRANSPORT'] = '1'
+
+app = FastAPI()
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # You can change this to specific domains
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+logging.basicConfig(level=logging.DEBUG)
 class State(TypedDict):
     next: str
-    #user_query_finalized: bool
-    #calendar_checked: bool
-    #data_fetched: bool
     message_list : list
     fetched_data : str
     query : str
+    itinerary:str
 
 # # Creating the Agent Nodes
 
 def data_retrieval_node(state: State) -> Command[Literal['chatbot']]:
-    #print(state["query"])
+    # print(state["query"])
     response = data_retrieval_agent(state['query'])
     print("Retrieved data:" + str(response))
 
-    state["fetched_data"] += str(response) 
-
-    if not response: 
+    if not response:
         result = "couldn't retrieve data which are needed for itinerary agent"
     else:
-        result = "data retrieved which are needed for itinerary agent"    
-    #result = data_retrieval_agent(state["query"])
+        result = "data retrieved which are needed for itinerary agent"
+        # result = data_retrieval_agent(state["query"])
 
-    new_lst = state["message_list"]+ [("ai","data_retrieval_agent : " +  result)]
+    new_lst = state["message_list"] + [("ai", "data_retrieval_agent : " + result)]
 
-    return Command(goto='chatbot', update={"next":"chatbot","message_list":new_lst}) 
+    return Command(goto='chatbot', update={"next": "chatbot", "message_list": new_lst, "fetched_data": str(response)})
+
 
 def itinerary_node(state: State) -> Command[Literal['chatbot']]:
-     
-     response = itinerary_agent(state["query"],state["fetched_data"])
+    response = itinerary_agent(state["query"], state["fetched_data"])
 
-     #new_lst = state["message_list"].append(response.content)
-     new_lst = state["message_list"]+ [("ai", "itinerary_agent : " + response)]
+    # new_lst = state["message_list"].append(response.content)
+    new_lst = state["message_list"] + [("ai", "itinerary_agent : " + response)]
 
-     return Command(goto='chatbot',update={"next":"chatbot","message_list":new_lst})
+    return Command(goto='chatbot', update={"next": "chatbot", "message_list": new_lst, "itinerary": str(response)})
+
 
 def query_checker_node(state: State) -> Command[Literal['chatbot']]:
-    
     result = query_checker_module(state["message_list"])
 
-    new_lst = state["message_list"]+ [("ai", "query_checker_module : " + "query built successfully, proceed to next steps")]
+    new_lst = state["message_list"] + [
+        ("ai", "query_checker_module : " + "query built successfully, proceed to next steps")]
 
-    return Command(goto='chatbot', update={"next":"chatbot","message_list":new_lst,"query":result}) 
+    return Command(goto='chatbot', update={"next": "chatbot", "message_list": new_lst, "query": result})
+
 
 def calendar_node(state: State) -> Command[Literal['chatbot']]:
+    # print("QUERY GOING TO CALENDAR AGENT",state["message_list"][-1])
+    result = calendar_agent(str(state["message_list"][-1]))
 
-    result = calendar_agent()
+    new_lst = state["message_list"] + [("ai", "calendar_agent : " + result)]
 
-    new_lst = state["message_list"]+ [("ai", "calendar_agent : " + result)]
+    return Command(goto='chatbot', update={"next": "chatbot", "message_list": new_lst})
 
-    return Command(goto='chatbot', update={"next":"chatbot","message_list":new_lst})
+# def feedback_node(state: State) -> Command[Literal['chatbot']]:
+#     # Get user feedback (in your case, this might come from user input or an API)
+#     feedback_query = state['query']  # Example query
+#     updated_plan = feedback_agent(state, feedback_query)  # Process feedback
+#
+#     # Update message list with new plan
+#     new_lst = state["message_list"] + [("ai", "feedback_agent : " + updated_plan)]
+#
+#     # Return command to continue conversation
+#     return Command(goto='chatbot', update={"next": "chatbot", "message_list": new_lst, "itinerary": updated_plan})
 
-
-# # Human Input
+# Human Input
 
 def human_interrupt(state: State) -> Command[Literal['chatbot']]:
+    # query = state['message_list'][-1].content
 
-    #query = state['message_list'][-1].content
+    # user_input = input("user: ")
 
-    user_input = input("user: ")
+    # new_lst = state["message_list"]+ [("user", user_input)]
 
-    new_lst = state["message_list"]+ [("user", user_input)]
-    
-    
+    # return Command(goto='chatbot', update={"message_list":new_lst})
 
-    return Command(goto='chatbot', update={"message_list":new_lst})
+    return
 
 
-## Chatbot
+# Chatbot
 
 chatbot_prompt = """
 You are a dedicated travel planning chatbot designed to create personalized and well-organized trips.
@@ -87,6 +124,7 @@ Your Responsibilities:
 
 1. Greeting & Introduction: Start by greeting the user and explaining that you're here to help plan their trip. Inform them that currently you can assist them with:
    - Calendar checks
+   - Add events to user's Google calendar
    - Data retrieval for travel details (e.g., restaurants, flights, attractions)
    - Itinerary planning
 
@@ -103,7 +141,7 @@ Your Responsibilities:
    - **itinerary_agent**: Once data is gathered, this agent will create a personalized itinerary for the user.
 
 4. Agent Routing: Based on the collected information, determine which agent to route the user to:
-   - **calendar_agent**: Check for any calendar conflicts with the user’s travel dates.
+   - **calendar_agent**: Check for any calendar conflicts with the user’s travel dates and add calendar events to the google calendar.
    - **data_retrieval_agent**: Fetch the relevant travel data after the user provides their preferences and budget.
    - **itinerary_agent**: Generate the itinerary after gathering travel data.
    - **human_interrupt**: Allow the user to interact directly and make any changes to their itinerary or provide additional information.
@@ -138,36 +176,41 @@ Example Workflow:
 12. **itinerary_agent**: [Creates itinerary]
 13. **Chatbot**: "Here's your personalized itinerary! Would you like to add anything else?"
 14. **User**: "No, that's all. Thank you!"
-15. **Chatbot**: "Would you like me to add this itinerary to your Google Calendar with reminders?"
+15. **Chatbot**: "Would you like me to add this event to your Google Calendar?"
 16. **User**: "Yes, please."
-17. **calendar_agent**: [Adds events to Google Calendar]
-18. **Chatbot**: "FINISH"
+17. **Chatbot**: "Let me add this event your calendar.Event details : 2nd March - 5th March Trip to Miami from NewYork."
+18. **calendar_agent**: [Adds events to Google Calendar]
+19. **Chatbot**: "FINISH"
 """
+
 
 class Router(TypedDict):
     """Worker to route to next. If no workers needed, route to FINISH."""
 
-    next: Literal['itinerary_agent','human_interrupt','calendar_agent','data_retrieval_agent','FINISH']
-    messages:str
+    next: Literal['itinerary_agent', 'human_interrupt', 'calendar_agent', 'data_retrieval_agent', 'FINISH']
+    messages: str
 
-def chatbot_node(state:State) -> Command[Literal['human_interrupt','query_checker_module','calendar_agent','itinerary_agent','data_retrieval_agent','__end__']] :
+
+def chatbot_node(state: State) -> Command[Literal[
+    'human_interrupt', 'query_checker_module', 'calendar_agent', 'itinerary_agent', 'data_retrieval_agent', '__end__']]:
     messages = [
-        {"role": "system","content":chatbot_prompt}
-    ] + state["message_list"]
+                   {"role": "system", "content": chatbot_prompt}
+               ] + state["message_list"]
 
     response = llm.with_structured_output(Router).invoke(messages)
 
-    new_lst = state["message_list"] + [("ai", response["messages"])]
-    
+    new_lst = state["message_list"] + [("ai", "chatbot : " + response["messages"])]
+
     goto = response["next"]
 
     if goto == "FINISH":
-         goto = END
+        goto = END
 
-    if goto == "data_retrieval_agent" and state["query"]=="":
-         goto = "query_checker_module"     
-         
-    return Command(goto=goto,update={"next": goto,"message_list": new_lst})       
+    if goto == "data_retrieval_agent" and state["query"] == "":
+        goto = "query_checker_module"
+
+
+    return Command(goto=goto, update={"next": goto, "message_list": new_lst})
 
 # Initialize the state graph
 
@@ -183,30 +226,197 @@ builder.add_node("query_checker_module",query_checker_node)
 # Compile the graph
 graph = builder.compile()
 
-# Initial state for the conversation
-initial_state = {
-    "message_list": [("user", "Hi")],
-    "fetched_data": "",
-    "query":""
-}
+class ChatInput(BaseModel):
+    ipt: str
 
-import pprint
-# Start the graph stream to trigger the flow
-for s in graph.stream(initial_state,subgraphs=True):
-        
-        #print(s)
-        #message_data = s[1]  # Access the second element of the tuple
-        #print(f"Next action: {message_data.get('next')}")
-        #print(f"Message list: {message_data.get('message_list')}")
-        #pprint.pprint(f"Last Message: {message_data.get('message_list')[-1]}")
-        #print("\n----\n")
-        
-        for key, value in s[1].items():
-            if key in ['chatbot', 'itinerary_agent', 'data_retrieval_agent','calendar_agent','query_checker_module']:
-                #print(value['messages'])
-                print(key)
-                print("next_node: " + value['next'])
-                print("message: " + value['message_list'][-1][1])
-        print("----")
+@app.post('/chat')
+def chat(input_data: ChatInput):
+    ipt = input_data.ipt
 
-        
+    if not os.path.exists("graph_state.json"):
+        with open("graph_state.json", "w") as json_file:
+            initial_state = {
+                "message_list": [("user", "Hi")],
+                "fetched_data": "",
+                "query": ""
+            }
+            json.dump(initial_state, json_file, indent=4)
+
+    with open("graph_state.json", "r") as json_file:
+        current_state = json.load(json_file)
+
+    current_state["next"] = 'chatbot'
+    current_state["message_list"].append(['user', ipt])
+
+    initial_state = current_state
+
+    # Start the graph stream
+    # ============================== INITIAL=============================================================
+    # for s in graph.stream(initial_state,subgraphs=True, interrupt_before=["human_interrupt"]):
+    #         for key, value in s[1].items():
+    #             if key in ['chatbot', 'itinerary_agent', 'data_retrieval_agent','calendar_agent','query_checker_module']:
+    #                 current_state["message_list"].append(["ai", value['message_list'][-1][1]])
+    #                 with open("graph_state.json", "w") as json_file:
+    #                     json.dump(current_state, json_file, indent=4)
+    #                 print(key)
+    #                 print("next_node: " + value['next'])
+    #                 print("message: " + value['message_list'][-1][1])
+    #             if key == 'human_interrupt':
+    #                 current_state["message_list"].append(["ai", value['message_list'][-1][1]])
+    #                 with open("graph_state.json", "w") as json_file:
+    #                     json.dump(current_state, json_file, indent=4)
+    #                 return current_state["message_list"]
+    # return current_state["message_list"]
+#     ===================================UPDATED===========================================================
+    for s in graph.stream(initial_state, subgraphs=True, interrupt_before=["human_interrupt"], stream_mode="values"):
+        print(s[1])
+        if "message_list" in s[1] and s[1]['message_list'][-1][0] == "ai":
+            current_state["message_list"].append(["ai", s[1]['message_list'][-1][1]])
+            current_state["query"] = s[1]["query"]
+            current_state["fetched_data"] = s[1]["fetched_data"]
+            current_state["itinerary"] = s[1]["itinerary"]
+            with open("graph_state.json", "w") as json_file:
+                json.dump(current_state, json_file, indent=4)
+
+            print("message: " + s[1]['message_list'][-1][1])
+            print("next_node: " + s[1]["next"])
+            print("query:" + s[1]['query'])
+            print("fetched_data:" + s[1]["fetched_data"])
+            print("itinerary:" + s[1]["itinerary"])
+            print("----")
+            print("\n")
+            print(s[1]["next"] + "\n")
+    return current_state["message_list"]
+
+
+@app.post("/chat_stream")
+async def chat_stream(human_input: ChatInput):
+    # Check if the file exists
+    # return {"reply": f"You said: {human_input.message}"}
+    if os.path.exists("graph_state.json"):
+        with open("graph_state.json", "r") as json_file:
+            current_state = json.load(json_file)
+    else:
+        # If the file doesn't exist, create a new one with default values
+        current_state = {
+            "message_list": [("user", "Hi")],
+            "query": "",
+            "fetched_data": "",
+            "itinerary": "",
+        }
+        with open("graph_state.json", "w") as json_file:
+            json.dump(current_state, json_file)
+
+    current_state["next"] = 'chatbot'
+    current_state["message_list"].append(['user', human_input.ipt])
+    initial_state = current_state
+
+    # Start the graph stream
+
+    async def message_stream() -> AsyncIterator[str]:
+        for s in graph.stream(initial_state, subgraphs=True, interrupt_before=["human_interrupt"],
+                              stream_mode="values"):
+            if "message_list" in s[1] and s[1]['message_list'][-1][0] == "ai":
+                current_state["message_list"].append(["ai", s[1]['message_list'][-1][1]])
+                current_state["query"] = s[1]["query"]
+                current_state["fetched_data"] = s[1]["fetched_data"]
+                current_state["itinerary"] = s[1].get("itinerary")
+
+                with open("graph_state.json", "w") as json_file:
+                    json.dump(current_state, json_file, indent=4)
+
+                print("message: " + s[1]['message_list'][-1][1])
+                print("next_node: " + s[1].get("next", ""))
+                print("query: " + current_state["query"])
+                print("fetched_data: " + current_state["fetched_data"])
+                print(f"itinerary: {current_state.get('itinerary', 'None')}")
+                print("----\n")
+
+                yield s[1]['message_list'][-1][1] + "\n"
+
+    return StreamingResponse(message_stream(), media_type="text/plain")
+
+class UserProfile(BaseModel):
+    userId: str
+
+@app.post("/save_profile")
+
+async def save_profile(profile: UserProfile):
+    user_id = profile.userId
+
+    with open("user_profiles.txt", "a") as file:
+        file.write(f"{user_id}\n")
+
+    return {"status": "success", "message": f"User ID {user_id} saved."}
+
+
+GOOGLE_CLIENT_ID = os.environ["GOOGLE_CLIENT_ID"]
+GOOGLE_CLIENT_SECRET = os.environ["GOOGLE_CLIENT_SECRET"]
+REDIRECT_URI = "http://localhost:5000/auth/callback"
+SCOPES = ["https://www.googleapis.com/auth/calendar"]
+
+# 📍 TEMP STORAGE (can be replaced with DB)
+TOKEN_DIR = "user_tokens"
+os.makedirs(TOKEN_DIR, exist_ok=True)
+
+# === ROUTES ===
+
+@app.get("/auth/google")
+def auth_google(userId: str):
+    flow = Flow.from_client_config(
+        {
+            "web": {
+                "client_id": GOOGLE_CLIENT_ID,
+                "client_secret": GOOGLE_CLIENT_SECRET,
+                "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+                "token_uri": "https://oauth2.googleapis.com/token",
+                "redirect_uris": [REDIRECT_URI]
+            }
+        },
+        scopes=SCOPES,
+        redirect_uri=REDIRECT_URI
+    )
+    auth_url, _ = flow.authorization_url(
+        access_type='offline',
+        include_granted_scopes='true',
+        prompt='consent',
+        state=userId
+    )
+    return RedirectResponse(auth_url)
+
+
+@app.get("/auth/callback")
+def auth_callback(request: Request):
+    full_url = str(request.url)
+    state = request.query_params.get("state")
+
+    flow = Flow.from_client_config(
+        {
+            "web": {
+                "client_id": GOOGLE_CLIENT_ID,
+                "client_secret": GOOGLE_CLIENT_SECRET,
+                "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+                "token_uri": "https://oauth2.googleapis.com/token",
+                "redirect_uris": [REDIRECT_URI]
+            }
+        },
+        scopes=SCOPES,
+        redirect_uri=REDIRECT_URI
+    )
+    flow.fetch_token(authorization_response=full_url)
+
+    creds = flow.credentials
+
+    # Save credentials per user
+    with open(f"{TOKEN_DIR}/{state}.json", "w") as f:
+        json.dump({
+            "token": creds.token,
+            "refresh_token": creds.refresh_token,
+            "token_uri": creds.token_uri,
+            "client_id": creds.client_id,
+            "client_secret": creds.client_secret,
+            "scopes": creds.scopes
+        }, f)
+
+    # return JSONResponse({"message": f"Google Calendar connected for user {state}"})
+    return RedirectResponse(url=f"http://localhost:5173/?connected=true")
