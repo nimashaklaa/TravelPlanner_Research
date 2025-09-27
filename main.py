@@ -9,6 +9,7 @@ from typing import Literal
 from langgraph.types import Command
 
 from agents.feedback import feedback_agent
+from agents.suggestion import suggestion_agent
 from agents.itinerary import itinerary_agent
 from agents.data_retrieval import data_retrieval_agent
 from agents.calendar import calendar_agent
@@ -118,6 +119,21 @@ def feedback_node(state: State) -> Command[Literal['chatbot']]:
         new_lst = state["message_list"] + [("ai", "feedback_agent : " + str(feedback_result))]
         return Command(goto='chatbot', update={"next": "chatbot", "message_list": new_lst, "itinerary": str(feedback_result)})
 
+
+def suggestion_node(state: State) -> Command[Literal['chatbot']]:
+    """
+    Suggestion node that provides recommendations for attractions, hotels, restaurants, etc.
+    without creating full travel plans.
+    """
+    user_query = str(state["message_list"][-1])
+    
+    # Call the suggestion agent
+    suggestions = suggestion_agent(user_query)
+    
+    new_lst = state["message_list"] + [("ai", "suggestion_agent : " + suggestions)]
+    
+    return Command(goto='chatbot', update={"next": "chatbot", "message_list": new_lst})
+
 # Human Input
 
 def human_interrupt(state: State) -> Command[Literal['chatbot']]:
@@ -136,6 +152,7 @@ Your Responsibilities:
    - Add events to user's Google calendar
    - Data retrieval for travel details (e.g., restaurants, flights, attractions)
    - Itinerary planning
+   - Suggestions for attractions, hotels, restaurants in specific areas
 
 2. Query Construction : Before moving forward, gather essential details for building a travel query. You will ask the user for:
    - Departure location(required)
@@ -154,11 +171,12 @@ Your Responsibilities:
    - **data_retrieval_agent**: Fetch the relevant travel data after the user provides their preferences and budget.
    - **itinerary_agent**: Generate the itinerary after gathering travel data.
    - **feedback_agent**: Handle user feedback and make specific changes to existing travel plans. This agent can understand what changes are needed and fetch additional data if required.
+   - **suggestion_agent**: Provide recommendations for attractions, hotels, restaurants, etc. in specific areas without creating full travel plans.
    - **human_interrupt**: Allow the user to interact directly and make any changes to their itinerary or provide additional information.
 
 5. Response Handling:
    - **Structured Output**: Ensure all responses are in JSON format with the following keys:
-     - `next`: The next agent to route to (`calendar_agent`, `data_retrieval_agent`, `itinerary_agent`, `feedback_agent`, `human_interrupt`, or `FINISH`).
+     - `next`: The next agent to route to (`calendar_agent`, `data_retrieval_agent`, `itinerary_agent`, `feedback_agent`, `suggestion_agent`, `human_interrupt`, or `FINISH`).
      - `messages`: The message content to send to the user.
 
 6. Information Validation: If any required information is missing or incomplete, gather more information from the user.
@@ -197,12 +215,12 @@ Example Workflow:
 class Router(TypedDict):
     """Worker to route to next. If no workers needed, route to FINISH."""
 
-    next: Literal['itinerary_agent', 'human_interrupt', 'calendar_agent', 'data_retrieval_agent', 'feedback_agent', 'FINISH']
+    next: Literal['itinerary_agent', 'human_interrupt', 'calendar_agent', 'data_retrieval_agent', 'feedback_agent', 'suggestion_agent', 'FINISH']
     messages: str
 
 
 def chatbot_node(state: State) -> Command[Literal[
-    'human_interrupt', 'query_checker_module', 'calendar_agent', 'itinerary_agent', 'data_retrieval_agent', 'feedback_agent', '__end__']]:
+    'human_interrupt', 'query_checker_module', 'calendar_agent', 'itinerary_agent', 'data_retrieval_agent', 'feedback_agent', 'suggestion_agent', '__end__']]:
     messages = [
                    {"role": "system", "content": chatbot_prompt}
                ] + state["message_list"]
@@ -231,6 +249,7 @@ builder.add_node("itinerary_agent", itinerary_node)
 builder.add_node("data_retrieval_agent", data_retrieval_node)
 builder.add_node("calendar_agent", calendar_node)
 builder.add_node("feedback_agent", feedback_node)
+builder.add_node("suggestion_agent", suggestion_node)
 builder.add_node("human_interrupt", human_interrupt)
 builder.add_node("query_checker_module",query_checker_node)
 
