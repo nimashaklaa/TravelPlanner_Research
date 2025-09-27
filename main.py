@@ -8,7 +8,6 @@ from typing_extensions import TypedDict
 from typing import Literal
 from langgraph.types import Command
 
-from agents.feedback import feedback_agent
 from agents.itinerary import itinerary_agent
 from agents.data_retrieval import data_retrieval_agent
 from agents.calendar import calendar_agent
@@ -18,12 +17,10 @@ from pydantic import BaseModel
 from fastapi.responses import StreamingResponse,Response
 from typing import AsyncIterator
 from fastapi.responses import RedirectResponse
-from fastapi.responses import JSONResponse
 
 import logging
-from uuid import uuid4
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi import FastAPI,HTTPException,Body
+from fastapi import FastAPI
 from fastapi import Request
 
 os.environ['OAUTHLIB_INSECURE_TRANSPORT'] = '1'
@@ -90,28 +87,9 @@ def calendar_node(state: State) -> Command[Literal['chatbot']]:
 
     return Command(goto='chatbot', update={"next": "chatbot", "message_list": new_lst})
 
-# def feedback_node(state: State) -> Command[Literal['chatbot']]:
-#     # Get user feedback (in your case, this might come from user input or an API)
-#     feedback_query = state['query']  # Example query
-#     updated_plan = feedback_agent(state, feedback_query)  # Process feedback
-#
-#     # Update message list with new plan
-#     new_lst = state["message_list"] + [("ai", "feedback_agent : " + updated_plan)]
-#
-#     # Return command to continue conversation
-#     return Command(goto='chatbot', update={"next": "chatbot", "message_list": new_lst, "itinerary": updated_plan})
-
 # Human Input
 
 def human_interrupt(state: State) -> Command[Literal['chatbot']]:
-    # query = state['message_list'][-1].content
-
-    # user_input = input("user: ")
-
-    # new_lst = state["message_list"]+ [("user", user_input)]
-
-    # return Command(goto='chatbot', update={"message_list":new_lst})
-
     return
 
 
@@ -250,24 +228,7 @@ def chat(input_data: ChatInput):
 
     initial_state = current_state
 
-    # Start the graph stream
-    # ============================== INITIAL=============================================================
-    # for s in graph.stream(initial_state,subgraphs=True, interrupt_before=["human_interrupt"]):
-    #         for key, value in s[1].items():
-    #             if key in ['chatbot', 'itinerary_agent', 'data_retrieval_agent','calendar_agent','query_checker_module']:
-    #                 current_state["message_list"].append(["ai", value['message_list'][-1][1]])
-    #                 with open("graph_state.json", "w") as json_file:
-    #                     json.dump(current_state, json_file, indent=4)
-    #                 print(key)
-    #                 print("next_node: " + value['next'])
-    #                 print("message: " + value['message_list'][-1][1])
-    #             if key == 'human_interrupt':
-    #                 current_state["message_list"].append(["ai", value['message_list'][-1][1]])
-    #                 with open("graph_state.json", "w") as json_file:
-    #                     json.dump(current_state, json_file, indent=4)
-    #                 return current_state["message_list"]
-    # return current_state["message_list"]
-#     ===================================UPDATED===========================================================
+
     for s in graph.stream(initial_state, subgraphs=True, interrupt_before=["human_interrupt"], stream_mode="values"):
         print(s[1])
         if "message_list" in s[1] and s[1]['message_list'][-1][0] == "ai":

@@ -161,15 +161,23 @@ def calendar_agent(query):
 
     calendar_agent = create_react_agent(model=llm, tools=tools, prompt=prompt)
 
-    """for step in calendar_agent.stream({"messages": [("human", query)]}):
-        for key, value in step.items():
-            print(key)
-            if key == "agent":
-                print(value["messages"])
-                continue
-            print(value)
-        print("---------------")"""
-    for step in calendar_agent.stream({"messages": [("human", query)]}, stream_mode="debug"):
-        continue
-    # print("Last Message: ",step["messages"][-1].content)
-    return step["messages"][-1].content
+    # Stream the agent response and collect the final result
+    final_result = None
+    for step in calendar_agent.stream({"messages": [("human", query)]}):
+        # Check if this step contains agent messages
+        if "agent" in step and "messages" in step["agent"]:
+            messages = step["agent"]["messages"]
+            if messages:
+                final_result = messages[-1].content
+    
+    # If no result found in streaming, try a direct invoke
+    if final_result is None:
+        try:
+            result = calendar_agent.invoke({"messages": [("human", query)]})
+            if "messages" in result and result["messages"]:
+                final_result = result["messages"][-1].content
+        except Exception as e:
+            print(f"Error in calendar agent: {e}")
+            final_result = "Error occurred while processing calendar request."
+    
+    return final_result or "Calendar check completed."
