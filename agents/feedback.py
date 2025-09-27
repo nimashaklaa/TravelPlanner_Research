@@ -1,5 +1,3 @@
-# from langchain_core.prompts import PromptTemplate
-
 ZEROSHOT_FEEDBACK_INSTRUCTION = """You are an advanced AI travel assistant that refines and improves an existing travel plan based on user feedback. Your goal is to modify the plan accurately while ensuring all necessary changes are applied.
 
 ---
@@ -117,53 +115,157 @@ def feedback_agent(state: dict, query: str) -> str:
 
 from config import llm
 from typing_extensions import TypedDict
+import json
 
 
-# Define the output structure for query checker
+# Define the output structure for feedback agent
 class feedback_agent_output(TypedDict):
-    updated_itinery: str
+    updated_itinerary: str
+    data_needed: str
+    changes_made: str
 
 
-# Prompt for the query builder agent
-def feedback_agent_prompt(state, user_feedback):
-    feedback_agent_instructions = f"""
-
-   You are a travel feedback assistant. Your job is to revise an existing travel plan *based on user feedback* while keeping the format, style, and structure exactly the same as the original plan. 
-
-You will be given:
-1. The *original travel query*.
-2. The *original travel plan*.
-3. The *user's feedback*.
-4. The full *data used to generate the plan* (including flight details, restaurant options, hotel listings, and attractions).
-
-💡 Your task:
-- Apply only the *specified feedback* to the relevant part of the plan.
-- Use the given data only—*do not invent or assume* anything beyond it.
-- *Do not change* anything else in the plan outside what the user requested.
-- Ensure that the plan remains aligned with commonsense (e.g., breakfast before lunch, attraction before dinner, etc.).
-- Maintain the original format, including parentheses for prices, dashes for non-required fields, and city indicators.
-
----
-
-*Input Format:*
-
-Original Query: {state['query']}
-
-Original Travel Plan:
-{state['itinerary']}
-
-User Feedback: {user_feedback}
-
-Full Data Used to Generate Plan:
-{state['fetched_data']}
-
----
- Modified Travel Plan:
- """
-    return feedback_agent_instructions
-
-
+# Enhanced feedback agent that can understand specific changes and fetch data when needed
 def feedback_agent(state, user_feedback):
-    respond = llm.with_structured_output(feedback_agent_output).invoke(feedback_agent_prompt(state, user_feedback))
+    """
+    Enhanced feedback agent that:
+    1. Analyzes user feedback to understand specific changes needed
+    2. Determines if existing data is sufficient or if new data is needed
+    3. Uses data retrieval agent when necessary
+    4. Makes targeted updates to only the requested parts
+    """
+    
+    # First, analyze what changes are needed
+    analysis_prompt = f"""
+    Analyze the user feedback and determine what specific changes are needed in the travel plan.
+    
+    Original Query: {state.get('query', '')}
+    Original Travel Plan: {state.get('itinerary', '')}
+    Available Data: {state.get('fetched_data', '')}
+    User Feedback: {user_feedback}
+    
+    Please analyze and respond with:
+    1. What specific parts of the plan need to be changed
+    2. Whether the existing data is sufficient for these changes
+    3. What new data might be needed (if any)
+    4. What type of changes are being requested (accommodation, transportation, activities, etc.)
+    
+    Respond in JSON format:
+    {{
+        "changes_needed": ["list of specific changes"],
+        "existing_data_sufficient": true/false,
+        "new_data_needed": ["list of data types needed"],
+        "change_type": "accommodation/transportation/activities/restaurants/attractions"
+    }}
+    """
+    
+    try:
+        analysis = llm.invoke(analysis_prompt)
+        analysis_result = json.loads(analysis.content)
+    except:
+        # Fallback if JSON parsing fails
+        analysis_result = {
+            "changes_needed": ["general updates"],
+            "existing_data_sufficient": True,
+            "new_data_needed": [],
+            "change_type": "general"
+        }
+    
+    # If new data is needed, use data retrieval agent
+    additional_data = ""
+    if not analysis_result.get("existing_data_sufficient", True) and analysis_result.get("new_data_needed"):
+        try:
+            from agents.data_retrieval import data_retrieval_agent
+            # Create a focused query for data retrieval based on what's needed
+            data_query = f"Get {', '.join(analysis_result['new_data_needed'])} for the travel plan updates"
+            additional_data = str(data_retrieval_agent(data_query))
+        except Exception as e:
+            print(f"Error fetching additional data: {e}")
+            additional_data = ""
+    
+    # Now create the enhanced prompt for the feedback agent
+    feedback_agent_instructions = f"""
+    You are an intelligent travel feedback assistant. Your job is to revise an existing travel plan based on user feedback while maintaining the original format and structure.
 
-    return str(respond)
+    **Your Capabilities:**
+    1. Understand specific change requests from user feedback
+    2. Use existing data when sufficient
+    3. Apply only the requested changes without modifying other parts
+    4. Maintain logical flow and timing in the itinerary
+    5. Preserve the original format and style
+
+    **Analysis of Changes Needed:**
+    {json.dumps(analysis_result, indent=2)}
+
+    **Available Information:**
+    - Original Query: {state.get('query', '')}
+    - Original Travel Plan: {state.get('itinerary', '')}
+    - Existing Data: {state.get('fetched_data', '')}
+    - Additional Data (if fetched): {additional_data}
+    - User Feedback: {user_feedback}
+
+    **Instructions:**
+    1. Focus ONLY on the specific changes requested by the user
+    2. Use the most relevant data available (existing or newly fetched)
+    3. Maintain the original plan's structure and format
+    4. Ensure logical sequencing (e.g., breakfast before lunch, attractions before dinner)
+    5. Do not change parts of the plan that weren't mentioned in the feedback
+    6. If the feedback is unclear, make reasonable assumptions based on the context
+
+    **Output Format:**
+    Provide the updated travel plan that incorporates only the requested changes.
+    """
+    
+    # Use the enhanced prompt to get the updated itinerary
+    try:
+        response = llm.invoke(feedback_agent_instructions)
+        updated_itinerary = response.content
+    except Exception as e:
+        print(f"Error generating updated itinerary: {e}")
+        updated_itinerary = state.get('itinerary', '')
+    
+    # Create a summary of changes made
+    changes_summary = f"Applied changes: {', '.join(analysis_result.get('changes_needed', ['general updates']))}"
+    
+    return {
+        "updated_itinerary": updated_itinerary,
+        "data_needed": additional_data,
+        "changes_made": changes_summary
+    }
+
+
+# Legacy function for backward compatibility
+def feedback_agent_legacy(state, user_feedback):
+    """
+    Legacy feedback agent function for backward compatibility
+    """
+    feedback_agent_instructions = f"""
+    You are a travel feedback assistant. Your job is to revise an existing travel plan based on user feedback while keeping the format, style, and structure exactly the same as the original plan. 
+
+    You will be given:
+    1. The original travel query.
+    2. The original travel plan.
+    3. The user's feedback.
+    4. The full data used to generate the plan (including flight details, restaurant options, hotel listings, and attractions).
+
+    Your task:
+    - Apply only the specified feedback to the relevant part of the plan.
+    - Use the given data only—do not invent or assume anything beyond it.
+    - Do not change anything else in the plan outside what the user requested.
+    - Ensure that the plan remains aligned with commonsense (e.g., breakfast before lunch, attraction before dinner, etc.).
+    - Maintain the original format, including parentheses for prices, dashes for non-required fields, and city indicators.
+
+    Original Query: {state.get('query', '')}
+    Original Travel Plan: {state.get('itinerary', '')}
+    User Feedback: {user_feedback}
+    Full Data Used to Generate Plan: {state.get('fetched_data', '')}
+
+    Modified Travel Plan:
+    """
+    
+    try:
+        response = llm.invoke(feedback_agent_instructions)
+        return response.content
+    except Exception as e:
+        print(f"Error in legacy feedback agent: {e}")
+        return state.get('itinerary', '')

@@ -8,6 +8,7 @@ from typing_extensions import TypedDict
 from typing import Literal
 from langgraph.types import Command
 
+from agents.feedback import feedback_agent
 from agents.itinerary import itinerary_agent
 from agents.data_retrieval import data_retrieval_agent
 from agents.calendar import calendar_agent
@@ -87,6 +88,36 @@ def calendar_node(state: State) -> Command[Literal['chatbot']]:
 
     return Command(goto='chatbot', update={"next": "chatbot", "message_list": new_lst})
 
+
+def feedback_node(state: State) -> Command[Literal['chatbot']]:
+    """
+    Enhanced feedback node that can understand specific changes and fetch data when needed
+    """
+    user_feedback = str(state["message_list"][-1])
+    
+    # Call the enhanced feedback agent
+    feedback_result = feedback_agent(state, user_feedback)
+    
+    # Handle both new structured response and legacy response
+    if isinstance(feedback_result, dict):
+        updated_itinerary = feedback_result.get("updated_itinerary", "")
+        data_needed = feedback_result.get("data_needed", "")
+        changes_made = feedback_result.get("changes_made", "")
+        
+        # Update the itinerary in the state
+        new_lst = state["message_list"] + [("ai", f"feedback_agent : {changes_made} - {updated_itinerary}")]
+        
+        return Command(goto='chatbot', update={
+            "next": "chatbot", 
+            "message_list": new_lst,
+            "itinerary": updated_itinerary,
+            "fetched_data": state.get("fetched_data", "") + (f"\nAdditional data: {data_needed}" if data_needed else "")
+        })
+    else:
+        # Legacy response handling
+        new_lst = state["message_list"] + [("ai", "feedback_agent : " + str(feedback_result))]
+        return Command(goto='chatbot', update={"next": "chatbot", "message_list": new_lst, "itinerary": str(feedback_result)})
+
 # Human Input
 
 def human_interrupt(state: State) -> Command[Literal['chatbot']]:
@@ -119,14 +150,15 @@ Your Responsibilities:
    - **itinerary_agent**: Once data is gathered, this agent will create a personalized itinerary for the user.
 
 4. Agent Routing: Based on the collected information, determine which agent to route the user to:
-   - **calendar_agent**: Check for any calendar conflicts with the user’s travel dates and add calendar events to the google calendar.
+   - **calendar_agent**: Check for any calendar conflicts with the user's travel dates and add calendar events to the google calendar.
    - **data_retrieval_agent**: Fetch the relevant travel data after the user provides their preferences and budget.
    - **itinerary_agent**: Generate the itinerary after gathering travel data.
+   - **feedback_agent**: Handle user feedback and make specific changes to existing travel plans. This agent can understand what changes are needed and fetch additional data if required.
    - **human_interrupt**: Allow the user to interact directly and make any changes to their itinerary or provide additional information.
 
 5. Response Handling:
    - **Structured Output**: Ensure all responses are in JSON format with the following keys:
-     - `next`: The next agent to route to (`calendar_agent`, `data_retrieval_agent`, `itinerary_agent`, `human_interrupt`, or `FINISH`).
+     - `next`: The next agent to route to (`calendar_agent`, `data_retrieval_agent`, `itinerary_agent`, `feedback_agent`, `human_interrupt`, or `FINISH`).
      - `messages`: The message content to send to the user.
 
 6. Information Validation: If any required information is missing or incomplete, gather more information from the user.
@@ -165,12 +197,12 @@ Example Workflow:
 class Router(TypedDict):
     """Worker to route to next. If no workers needed, route to FINISH."""
 
-    next: Literal['itinerary_agent', 'human_interrupt', 'calendar_agent', 'data_retrieval_agent', 'FINISH']
+    next: Literal['itinerary_agent', 'human_interrupt', 'calendar_agent', 'data_retrieval_agent', 'feedback_agent', 'FINISH']
     messages: str
 
 
 def chatbot_node(state: State) -> Command[Literal[
-    'human_interrupt', 'query_checker_module', 'calendar_agent', 'itinerary_agent', 'data_retrieval_agent', '__end__']]:
+    'human_interrupt', 'query_checker_module', 'calendar_agent', 'itinerary_agent', 'data_retrieval_agent', 'feedback_agent', '__end__']]:
     messages = [
                    {"role": "system", "content": chatbot_prompt}
                ] + state["message_list"]
@@ -198,6 +230,7 @@ builder.add_node("chatbot", chatbot_node)
 builder.add_node("itinerary_agent", itinerary_node)
 builder.add_node("data_retrieval_agent", data_retrieval_node)
 builder.add_node("calendar_agent", calendar_node)
+builder.add_node("feedback_agent", feedback_node)
 builder.add_node("human_interrupt", human_interrupt)
 builder.add_node("query_checker_module",query_checker_node)
 
