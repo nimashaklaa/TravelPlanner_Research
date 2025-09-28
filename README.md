@@ -1,23 +1,67 @@
 # TravelPlanner 0.9
 
-A comprehensive AI-powered travel planning application that helps users create personalized itineraries, check calendar availability, and manage travel bookings through an intelligent multi-agent system.
+A comprehensive AI-powered travel planning application that leverages a hierarchical multi-agent system to create personalized itineraries, check calendar availability, and manage travel bookings through intelligent coordination and adaptive learning.
+
+## System Architecture
+
+Our multi-agent system follows a hierarchical structure where a supervising chatbot agent controls and coordinates interactions between specialized agents while maintaining direct communication with users. The architecture is represented as a state graph consisting of nodes (agents) and edges (transition conditions), enabling dynamic routing based on user needs and system state.
+
+**Key Architectural Features:**
+- **Centralized Coordination**: A supervising chatbot agent orchestrates all agent interactions
+- **Dynamic Routing**: Intelligent decision-making for agent selection based on context and user requirements
+- **State Management**: Persistent state tracking across agent interactions
+- **Adaptive Learning**: Novel learning mechanisms that improve recommendations over time
+- **Global Scalability**: Handles any location worldwide without hard-coding
 
 ## Features
 
-- 🤖 **Multi-Agent Architecture**: Intelligent agents for different aspects of travel planning
+- 🤖 **Hierarchical Multi-Agent System**: Coordinated agents with intelligent routing and state management
+- 🧠 **Adaptive Learning**: Novel learning mechanisms that improve recommendations over time
+- 🌍 **Global Scalability**: Handles any location worldwide through hierarchical context learning
 - 📅 **Google Calendar Integration**: Check availability and add events to your calendar
-- 🔍 **Data Retrieval**: Fetch travel data including flights, restaurants, and attractions
-- 📋 **Itinerary Generation**: Create personalized travel itineraries
-- 💬 **Interactive Chat Interface**: Natural language interaction with the travel planner
-- 🔄 **Real-time Streaming**: Live updates during the planning process
+- 🔍 **Intelligent Data Retrieval**: Context-aware fetching of travel data including flights, restaurants, and attractions
+- 📋 **Personalized Itinerary Generation**: Create customized travel itineraries based on user preferences and learning
+- 💬 **Interactive Chat Interface**: Natural language interaction with intelligent conversation flow
+- 🔄 **Real-time Streaming**: Live updates during the planning process with state persistence
+- 🎯 **Context-Aware Recommendations**: Learning-enhanced suggestions that adapt to user behavior and preferences
 
-## Agents
+## Agent Architecture
 
+### Central Coordinator
+- **Supervising Chatbot Agent**: Central orchestrator that coordinates all agent interactions, manages state transitions, and maintains conversation flow with users
+
+### Specialized Agents
 - **Calendar Agent**: Manages Google Calendar integration for availability checks and event creation
-- **Data Retrieval Agent**: Fetches relevant travel data based on user preferences
-- **Itinerary Agent**: Creates personalized travel itineraries
-- **Query Checker**: Validates and processes user queries
-- **Feedback Agent**: Handles user feedback and refinements
+- **Data Retrieval Agent**: Fetches relevant travel data based on user preferences and learned context
+- **Itinerary Agent**: Creates personalized travel itineraries using retrieved data and learned preferences
+- **Query Checker**: Validates and processes user queries to ensure proper routing
+- **Feedback Agent**: Handles user feedback and refinements with learning-enhanced recommendations
+- **Suggestion Agent**: Provides context-aware recommendations for attractions, hotels, and restaurants
+
+### Learning System
+- **Context Learner**: Hierarchical learning system that adapts to user preferences across different locations and contexts
+- **Similarity Learner**: Transfer learning between similar contexts for improved recommendations
+- **Pattern Discovery**: Unsupervised discovery of user behavior patterns from interactions
+- **Learning Agent**: Integrated ensemble learning that combines all learning approaches for optimal recommendations
+
+## How the Hierarchical System Works
+
+The system operates through a sophisticated state graph where:
+
+1. **User Interaction**: Users communicate with the supervising chatbot agent through natural language
+2. **Query Analysis**: The chatbot analyzes user input and determines the appropriate next step
+3. **Agent Routing**: Based on context and requirements, the chatbot routes to specialized agents:
+   - **Query Checker**: Validates and structures user queries
+   - **Calendar Agent**: Checks availability and manages calendar events
+   - **Data Retrieval Agent**: Fetches relevant travel data
+   - **Itinerary Agent**: Creates personalized travel plans
+   - **Feedback Agent**: Handles refinements and improvements
+   - **Suggestion Agent**: Provides recommendations
+4. **State Management**: Each agent updates the shared state and notifies the chatbot
+5. **Learning Integration**: The learning system continuously improves recommendations based on user interactions
+6. **Dynamic Routing**: The chatbot determines the next agent or requests additional user input
+
+This hierarchical approach ensures efficient coordination, maintains conversation context, and enables adaptive learning that improves over time.
 
 ## Prerequisites
 
