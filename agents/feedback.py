@@ -116,7 +116,7 @@ def feedback_agent(state: dict, query: str) -> str:
 from config import llm
 from typing_extensions import TypedDict
 import json
-from .learning_agent import EnhancedLearningAgent, LearningRecommendation
+from learners.learning_agent import EnhancedLearningAgent, LearningRecommendation
 
 # Define the output structure for feedback agent
 class feedback_agent_output(TypedDict):
