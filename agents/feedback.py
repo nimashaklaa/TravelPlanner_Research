@@ -116,23 +116,39 @@ def feedback_agent(state: dict, query: str) -> str:
 from config import llm
 from typing_extensions import TypedDict
 import json
-
+from .learning_agent import EnhancedLearningAgent, LearningRecommendation
 
 # Define the output structure for feedback agent
 class feedback_agent_output(TypedDict):
     updated_itinerary: str
     data_needed: str
     changes_made: str
+    learning_insights: str
+    personalization_factor: float
 
+
+# Initialize learning agent (singleton pattern)
+_learning_agent = None
+
+def get_learning_agent():
+    """Get or create the learning agent instance"""
+    global _learning_agent
+    if _learning_agent is None:
+        _learning_agent = EnhancedLearningAgent()
+        # Try to load existing learning data
+        _learning_agent.load_learning_data("learning_data")
+    return _learning_agent
 
 # Enhanced feedback agent that can understand specific changes and fetch data when needed
 def feedback_agent(state, user_feedback):
     """
-    Enhanced feedback agent that:
+    Enhanced feedback agent with learning capabilities that:
     1. Analyzes user feedback to understand specific changes needed
     2. Determines if existing data is sufficient or if new data is needed
     3. Uses data retrieval agent when necessary
     4. Makes targeted updates to only the requested parts
+    5. Learns from user feedback to improve future recommendations
+    6. Provides personalized suggestions based on learning
     """
     
     # First, analyze what changes are needed
@@ -183,9 +199,45 @@ def feedback_agent(state, user_feedback):
             print(f"Error fetching additional data: {e}")
             additional_data = ""
     
+    # Get learning agent for personalized recommendations
+    learning_agent = get_learning_agent()
+    
+    # Extract user context for learning
+    user_context = {
+        'meal_time': analysis_result.get('change_type', 'general'),
+        'occasion': 'travel_planning',
+        'budget': 'medium'  # Could be extracted from original query
+    }
+    
+    # Get learning-based recommendations
+    learning_recommendations = learning_agent.get_learning_recommendations(
+        user_id=state.get('user_id', 'default_user'),
+        context=user_context,
+        location=state.get('location', 'unknown'),
+        top_k=3
+    )
+    
+    # Learn from this feedback interaction
+    interaction = {
+        'user_id': state.get('user_id', 'default_user'),
+        'context': user_context,
+        'items': analysis_result.get('changes_needed', []),
+        'location': state.get('location', 'unknown'),
+        'feedback': user_feedback,
+        'satisfaction': 0.7  # Default, could be extracted from feedback sentiment
+    }
+    learning_agent.learn_from_interaction(interaction['user_id'], interaction)
+    
+    # Create learning insights
+    learning_insights = []
+    for rec in learning_recommendations:
+        learning_insights.append(f"- {rec.item} (confidence: {rec.confidence:.2f}, source: {rec.learning_source})")
+    
+    learning_insights_text = "Learning-based suggestions:\n" + "\n".join(learning_insights) if learning_insights else "No learning insights available yet."
+    
     # Now create the enhanced prompt for the feedback agent
     feedback_agent_instructions = f"""
-    You are an intelligent travel feedback assistant. Your job is to revise an existing travel plan based on user feedback while maintaining the original format and structure.
+    You are an intelligent travel feedback assistant with learning capabilities. Your job is to revise an existing travel plan based on user feedback while maintaining the original format and structure.
 
     **Your Capabilities:**
     1. Understand specific change requests from user feedback
@@ -193,6 +245,7 @@ def feedback_agent(state, user_feedback):
     3. Apply only the requested changes without modifying other parts
     4. Maintain logical flow and timing in the itinerary
     5. Preserve the original format and style
+    6. Incorporate learning-based insights for better personalization
 
     **Analysis of Changes Needed:**
     {json.dumps(analysis_result, indent=2)}
@@ -203,14 +256,16 @@ def feedback_agent(state, user_feedback):
     - Existing Data: {state.get('fetched_data', '')}
     - Additional Data (if fetched): {additional_data}
     - User Feedback: {user_feedback}
+    - Learning Insights: {learning_insights_text}
 
     **Instructions:**
     1. Focus ONLY on the specific changes requested by the user
     2. Use the most relevant data available (existing or newly fetched)
-    3. Maintain the original plan's structure and format
-    4. Ensure logical sequencing (e.g., breakfast before lunch, attractions before dinner)
-    5. Do not change parts of the plan that weren't mentioned in the feedback
-    6. If the feedback is unclear, make reasonable assumptions based on the context
+    3. Consider learning-based suggestions when appropriate
+    4. Maintain the original plan's structure and format
+    5. Ensure logical sequencing (e.g., breakfast before lunch, attractions before dinner)
+    6. Do not change parts of the plan that weren't mentioned in the feedback
+    7. If the feedback is unclear, make reasonable assumptions based on the context
 
     **Output Format:**
     Provide the updated travel plan that incorporates only the requested changes.
@@ -227,10 +282,17 @@ def feedback_agent(state, user_feedback):
     # Create a summary of changes made
     changes_summary = f"Applied changes: {', '.join(analysis_result.get('changes_needed', ['general updates']))}"
     
+    # Calculate personalization factor
+    personalization_factor = 0.5  # Default
+    if learning_recommendations:
+        personalization_factor = sum(rec.personalization_factor for rec in learning_recommendations) / len(learning_recommendations)
+    
     return {
         "updated_itinerary": updated_itinerary,
         "data_needed": additional_data,
-        "changes_made": changes_summary
+        "changes_made": changes_summary,
+        "learning_insights": learning_insights_text,
+        "personalization_factor": personalization_factor
     }
 
 
