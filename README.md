@@ -38,6 +38,54 @@ Our multi-agent system follows a hierarchical structure where a supervising chat
 - **Feedback Agent**: Handles user feedback and refinements with learning-enhanced recommendations
 - **Suggestion Agent**: Provides context-aware recommendations for attractions, hotels, and restaurants
 
+### Planner Module
+The planner module is responsible for generating and refining travel itineraries through iterative optimization. It comprises three key components:
+
+#### Initial Plan Generator
+- **Template-based Generation**: Creates initial itineraries using structured templates and rule-based selection
+- **Dynamic Budget Allocation**: Sophisticated budget distribution based on multiple factors:
+  - **Trip Type Analysis**: Different allocation patterns for business, adventure, cultural, food-focused, budget, day trips, family, romantic, and backpacking trips
+  - **Distance-based Adjustments**: Transportation costs scale with travel distance (local <50km, regional 50-300km, domestic >300km, international >1500km)
+  - **Duration Optimization**: Short trips (≤2 days) reduce accommodation, long trips (≥7 days) increase lodging allocation
+  - **Destination Cost Index**: Adapts to expensive (1.3) vs. budget-friendly (0.8) destinations
+  - **User Preference Blending**: Optional personalization with convex blending to maintain feasibility
+- **Constraint Satisfaction**: Ensures generated plans meet user budget, time, and location constraints
+- **LLM Integration**: Uses large language models with enhanced prompts for intelligent itinerary generation
+- **Fallback Mechanisms**: Provides basic itinerary templates when advanced generation fails
+
+#### Plan Evaluator
+- **Multi-dimensional Scoring**: Evaluates plans across 5 dimensions with weighted scoring:
+  - Budget Compliance (30% weight): Ensures plans stay within budget constraints
+  - Time Efficiency (25% weight): Optimizes activity scheduling and travel time
+  - Geographic Logic (20% weight): Minimizes travel distance and backtracking
+  - Activity Diversity (15% weight): Ensures variety in activity types
+  - Constraint Satisfaction (10% weight): Validates user-specified requirements
+- **Rule-based Assessment**: Uses deterministic algorithms for consistent, transparent evaluation
+- **Quality Thresholds**: Implements minimum score requirements (75/100 overall, 60/100 per dimension)
+- **Recommendation Generation**: Provides specific improvement suggestions based on evaluation results
+
+#### Plan Refiner
+- **Iterative Improvement**: Applies refinement strategies based on evaluation feedback
+- **Budget Optimization**: Finds cost-effective alternatives for accommodations, dining, and activities
+- **Time Optimization**: Reorganizes activities for better scheduling and efficiency
+- **Constraint Fixing**: Addresses violations of user-specified constraints
+- **Diversity Enhancement**: Adds variety to activity types and experiences
+- **Geographic Optimization**: Improves routing to minimize travel distance
+
+#### Optimization Loop
+The planner module implements an iterative optimization process that continues until quality thresholds are reached:
+1. **Initial Generation**: Creates baseline itinerary using the Initial Plan Generator
+2. **Evaluation**: Assesses plan quality using the Plan Evaluator
+3. **Refinement**: If quality threshold not met, applies Plan Refiner improvements
+4. **Re-evaluation**: Re-assesses refined plan quality
+5. **Termination**: Stops when threshold reached, max iterations exceeded, or minimal improvement detected
+
+**Configuration Parameters:**
+- Maximum iterations: 5 (configurable)
+- Minimum score threshold: 75.0/100
+- Minimum improvement per iteration: 5.0 points
+- Timeout: 300 seconds (5 minutes)
+
 ### Learning System
 - **Context Learner**: Hierarchical learning system that adapts to user preferences across different locations and contexts
 - **Similarity Learner**: Transfer learning between similar contexts for improved recommendations
@@ -62,6 +110,45 @@ The system operates through a sophisticated state graph where:
 6. **Dynamic Routing**: The chatbot determines the next agent or requests additional user input
 
 This hierarchical approach ensures efficient coordination, maintains conversation context, and enables adaptive learning that improves over time.
+
+## Planner Module Technical Details
+
+### Implementation Architecture
+The planner module follows a modular design pattern with clear separation of concerns:
+
+- **PlannerModule**: Main orchestrator that coordinates the optimization loop
+- **InitialPlanGenerator**: Handles initial itinerary creation with template-based generation and dynamic budget allocation
+- **RuleBasedPlanEvaluator**: Provides deterministic evaluation using rule-based scoring
+- **PlanRefiner**: Implements iterative improvement strategies
+- **DynamicBudgetAllocator**: Sophisticated budget distribution system considering trip type, distance, duration, cost index, and user preferences
+
+### Performance Characteristics
+- **Response Time**: 30-300 seconds depending on complexity and iteration count
+- **Memory Usage**: Stores evaluation history and refinement metadata
+- **Scalability**: Configurable iteration limits and timeout mechanisms
+- **Reliability**: Graceful fallback to simple generation if advanced planning fails
+
+### Quality Metrics
+- **Overall Score**: Weighted combination of 5 evaluation dimensions (0-100 scale)
+- **Improvement Tracking**: Monitors score improvements across iterations
+- **Success Rate**: Percentage of plans meeting quality thresholds
+- **Termination Analysis**: Tracks reasons for optimization completion
+
+### Integration Benefits
+- **Backward Compatibility**: Drop-in replacement for existing itinerary generation
+- **Configurable Quality**: Adjustable thresholds and iteration limits
+- **Transparent Evaluation**: Detailed scoring and recommendation system
+- **Error Resilience**: Automatic fallback mechanisms for robust operation
+- **Dynamic Budget Allocation**: Intelligent budget distribution based on trip characteristics
+- **Multi-factor Optimization**: Considers trip type, distance, duration, cost index, and user preferences
+
+### Dynamic Budget Allocation Features
+- **Trip Type Intelligence**: Automatically adjusts budget allocation based on travel purpose (business, adventure, cultural, etc.)
+- **Distance Awareness**: Transportation costs scale appropriately with travel distance
+- **Duration Optimization**: Short trips minimize accommodation, long trips optimize lodging allocation
+- **Cost Index Adaptation**: Adjusts to expensive vs. budget-friendly destinations
+- **User Personalization**: Optional preference blending while maintaining feasibility
+- **Validation and Fallback**: Ensures valid allocations with graceful degradation to legacy system
 
 ## Prerequisites
 
@@ -159,15 +246,29 @@ TravelPlanner_0.9/
 ├── agents/
 │   ├── calendar.py          # Google Calendar integration
 │   ├── data_retrieval.py    # Travel data fetching
-│   ├── itinerary.py         # Itinerary generation
+│   ├── itinerary.py         # Basic itinerary generation
+│   ├── enhanced_itinerary.py # Enhanced itinerary with planner integration
 │   ├── query_checker.py     # Query validation
-│   └── feedback.py          # User feedback handling
-├── google_credentials/      # Google OAuth credentials
-├── user_tokens/            # User authentication tokens
-├── main.py                 # FastAPI application
-├── config.py               # Configuration settings
-├── requirements.txt        # Python dependencies
-└── README.md              # This file
+│   ├── feedback.py          # User feedback handling
+│   ├── suggestion.py        # Context-aware recommendations
+│   ├── communication/       # Agent communication utilities
+│   └── planner/            # Advanced planning module
+│       ├── __init__.py
+│       ├── planner_module.py    # Main orchestrator
+│       ├── plan_generator.py    # Initial plan generation with dynamic allocation
+│       ├── plan_evaluator.py    # Rule-based evaluation
+│       ├── plan_refiner.py      # Iterative refinement
+│       ├── budget_allocator.py  # Dynamic budget allocation system
+│       └── README.md           # Planner module documentation
+├── learners/               # Learning system components
+├── google_credentials/     # Google OAuth credentials
+├── user_tokens/           # User authentication tokens
+├── main.py                # FastAPI application
+├── config.py              # Configuration settings
+├── requirements.txt       # Python dependencies
+├── PLANNER_INTEGRATION_GUIDE.md  # Integration documentation
+├── LEARNING_SYSTEM_README.md     # Learning system documentation
+└── README.md             # This file
 ```
 
 ## Configuration
@@ -241,3 +342,7 @@ For issues and questions:
 ---
 
 **Note**: This is version 0.9 of TravelPlanner. The application is in active development and may have breaking changes in future versions.
+
+## Research Paper Integration
+
+The Planner Module implementation documented above represents the current state of the travel planning system and can be directly referenced in research papers. The technical details, performance characteristics, and architectural decisions provide a comprehensive foundation for academic documentation of the multi-agent travel planning system.

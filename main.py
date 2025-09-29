@@ -10,7 +10,7 @@ from langgraph.types import Command
 
 from agents.feedback import feedback_agent
 from agents.suggestion import suggestion_agent
-from agents.itinerary import itinerary_agent
+from agents.enhanced_itinerary import enhanced_itinerary_agent
 from agents.data_retrieval import data_retrieval_agent
 from agents.calendar import calendar_agent
 from agents.query_checker import query_checker_module
@@ -43,7 +43,9 @@ class State(TypedDict):
     message_list : list
     fetched_data : str
     query : str
-    itinerary:str
+    itinerary: str
+    planning_enhanced: bool  # Track if enhanced planning was used
+    planning_score: float    # Store planning quality score
 
 # # Creating the Agent Nodes
 
@@ -64,12 +66,29 @@ def data_retrieval_node(state: State) -> Command[Literal['chatbot']]:
 
 
 def itinerary_node(state: State) -> Command[Literal['chatbot']]:
-    response = itinerary_agent(state["query"], state["fetched_data"])
+    # Use enhanced itinerary agent with planner module
+    response = enhanced_itinerary_agent(state["query"], state["fetched_data"], use_planner=True)
+    
+    # Try to get planning summary for metrics
+    try:
+        from agents.enhanced_itinerary import get_planning_summary
+        summary = get_planning_summary(state["query"], state["fetched_data"])
+        planning_score = summary.get('final_score', 0.0) if 'final_score' in summary else 0.0
+        planning_enhanced = True
+    except:
+        planning_score = 0.0
+        planning_enhanced = False
 
     # new_lst = state["message_list"].append(response.content)
-    new_lst = state["message_list"] + [("ai", "itinerary_agent : " + response)]
+    new_lst = state["message_list"] + [("ai", f"enhanced_itinerary_agent (score: {planning_score:.1f}) : " + response)]
 
-    return Command(goto='chatbot', update={"next": "chatbot", "message_list": new_lst, "itinerary": str(response)})
+    return Command(goto='chatbot', update={
+        "next": "chatbot", 
+        "message_list": new_lst, 
+        "itinerary": str(response),
+        "planning_enhanced": planning_enhanced,
+        "planning_score": planning_score
+    })
 
 
 def query_checker_node(state: State) -> Command[Literal['chatbot']]:
